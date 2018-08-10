@@ -1,0 +1,323 @@
+xlwings 中文学习笔记 
+
+1. 安装
+	对于windows, pip install xlwings
+	安装依赖： 需要pywin32, comtypes
+	对于windows系统，采用上述方式安装，会自动处理这些依赖
+	对于NumPy, Pandas, Matplotlib, Pillow/PIL，推荐安装，
+	xlwings与这些包联合使用，非常方便
+	可以运行在Python 2.7和3.3+
+
+2. 快速入门
+	2.1 使用python脚本自动化与excel交互
+		建立到工作簿的连接：
+			>>>import xlwings as xw
+			>>>wb = xw.Book() # 这会创建一个新的workbook
+			>>>wb = xw.Book("FileName.xlsx") # 这会连接当前目录下已经存在的文件
+			>>>wb = xw.Book(r"C:\path\to\file.xlsx") # 在Windwos上使用raw字符串转义反斜杠
+
+		If you have the same file open in two instances of Excel, you need to fully qualify 
+			it and include the app instance:
+			>>>xw.apps[0].books['FileName.xlsx'] # 文档中的写法，事实是会出错，不知道为什么
+			首先，不清楚什么情况下，需要在两个Excel实例中打开同一个文件，windows中打开Excel，
+			只能打开一个实例。另外，如果使用xw的app实例，打开同一个excel文件，第一次打开的文件可读
+			可写，第二次打开的实例，属于只读模式
+			>>>app0 = xw.App(visible=True,add_book=False)
+			>>>app1 = xw.App(visible=True,add_book=False)
+			>>>print(xw.apps)
+			>>>[] # 此时在任务管理器，可以看到两个EXCEL.EXE进程，但这里确是显示空，如果xw.App的参数为空，才会显示
+			>>>app0.books["FileName.xlsx"] # 官网手册中提供的写法会报错，不知道为什么
+			>>>wb0 = app0.books.open("FileName.xlsx")
+			>>>wb1 = app1.books.open("FileName.xlsx") # 执行完上述两条指令后，文件FileName.xlsx显示在了两个excel实例中
+												# 其中第一个可读可写，第二次打开，文件为只读模式
+
+			>>>sht0 = wb0.sheets["Sheet1"] # 实例化一个sheet对象
+			>>>sht0.range("A1").value = "Foo 1"
+			>>>sht0.range("A1").value
+			'Foo 1'
+
+			有一些比较方便的特性可以用，比如说Range expanding：
+			>>>sht0.range("A1").value = [['Foo 1', 'Foo 2', 'Foo 3'], [10.0, 11.0, 12.0]]
+			上面指令执行的结果是，将二维数组放在了A1开始，C2结束的二维表格区域内，也就是
+			Foo 1在A1格， F00 3在C1， 12.0在C2
+			>>>sht0.range("A1").value
+			'Foo 1'
+			>>>sht0.range("A1").expand().value
+			[['Foo 1', 'Foo 2', 'Foo 3'], [10.0, 11.0, 12.0]]
+
+			为了完整性
+			>>>wb0.save(FileSavePath)
+			>>>wb0.close()
+			>>>app0.quit()
+
+			对于pandas， matplotlib也有很好的兼容性
+			# 对于pandas，目前没怎么用到，这一段没有试
+			>>>import pandas as pd
+			>>>df = pd.DataFrame([[1, 2], [3, 4]], columns=['a', 'b'])
+			>>>sht.range('A1').value = df
+			>>>sht.range('A1').options(pd.DataFrame, expand='table').value
+				a 	b
+			0.0 1.0 2.0
+			1.0 3.0 4.0
+
+			可以把malplotlib的figures显示到excel中
+			>>>import matplotlib.pyplot as plt
+			>>>fig = plt.figure()
+			>>>plt.plot([1, 2, 3, 4, 5])
+			>>>sht.pictures.add(fig, name="MyPlot", update=True)
+
+			# 当前活动sheet交互的快捷方式：xw.Range
+			如果想快速的与当前的活动页进行交互，就不需要初始化一个workbook和sheet对象
+			只是简单的如下:
+			>>>import xlwings as xw
+			>>>xw.Range("A1").value = "Foo"
+			>>>xw.Range("A1").value
+			'Foo'
+			xw.Range只能用在与Excel交互时，如果在脚本中，就只能像上面那样通过book和sheet对象
+			来进行
+
+	2.2 宏： 从Excel调用Python
+		可以使用RunPython函数从VBA中调用 Python函数
+		Sub HelloWorld()
+			RunPython("import hello; hello.world()")
+		End Sub
+
+		默认情况下，RunPython希望hello.py与Excel 文件在同一级目录下， 在python脚本中引用当前的Excel book,
+		使用 xw.Book.caller
+		# hello.py
+		import numpy as np 
+		import xlwings as xw
+
+		def world():
+			wb = xw.Book.caller()
+			wb.sheets[0].range("A1").value = "Hello World!"
+
+		？？？？这一块，需要根据以内容，总结出一个详细的使用说明和样例
+
+	2.3 UDFs: User Defined Functions用户自定义函数(仅限windows)
+
+		写一个自定义python函数:
+		import xlwings as xw
+		@xw.func
+		def hello(name):
+			return 'Hello {0}.format(name)'
+
+		UDF同样可能使用接口转换函数
+		import xlwings as xw
+		import pandas as pd
+		@xw.func
+		@xw.arg('x', pd.DataFrame)
+		def corr12(x):
+			# x arrives as DataFrame
+			return x.corr
+
+		？？？？怎么调用这些自定义函数，还需要再仔细的看一下
+
+3. Connect to a Book
+	New book 	           xw.books.add()
+	Book by (full) name    xw.books.open(r"C:/path/to/file.xlsx")
+							or "C:\\path\\to\\file.xlsx"
+
+4. 语法概述
+	4.1 首先要先import xlwings as xw
+	4.2 Active objects
+		# Active app(i.e. Excel instance)
+		>>>app = xw.apps.active
+
+		# Active book
+		>>>wb = xw.books.active # in active app
+		>>>wb = app.books.active # in specific app
+
+		# Active sheet
+		>>>sht = xw.sheets.active # in active book
+		>>>sht = wb.sheets.active # in specific book
+
+		# Range on active sheet
+		>>>xw.Range("A1") # on active sheet of active book of active app
+
+		对于range区域的选择方法
+		sht.range("A1")
+		sht.range("A1:C1")等价于sht.range((1, 1), (1, 3))
+		注意:采用坐标的形式，括号内是先纵坐标，再横坐标
+
+	4.3 Full qualification(不知道怎么翻译)
+		小括号是遵循了Excel的惯例，从1开始索引，中括号是遵循了python的惯例，
+		从0开始索引，下面的表达式，都指向了同一个range
+		xw.apps[0].books[0].sheets[0].range("A1")
+		xw.app(1).books(1).sheets(1).range("A1")
+		xw.apps[0].books["Book1"].sheets["Sheet1"].range("A1")
+		xw.apps[1].books("Book1").sheets("Sheet1").range("A1")
+
+	4.4 Range对象可以进行indexing/slicing
+		>>>rng = sht.range("A1:D5")
+		>>> rng[0, 0]
+ 			<Range [Workbook1]Sheet1!$A$1>
+		>>> rng[1]
+ 			<Range [Workbook1]Sheet1!$B$1>
+		>>> rng[:, 3:] # 第一个坐标为纵坐标，第二个坐标为横坐标(y, x)
+			<Range [Workbook1]Sheet1!$D$1:$D$5>
+		>>> rng[1:3, 1:3]
+			<Range [Workbook1]Sheet1!$B$2:$C$3
+
+	4.5 Range对象访问的快捷方法
+		可以通过对Sheet对象进行索引或者切片，来访问range对象，这类似于
+		sheet.range or sheet.cells
+		>>> sht = xw.Book().sheets['Sheet1']
+		>>> sht['A1']
+		<Range [Book1]Sheet1!$A$1>
+		>>> sht['A1:B5']
+		<Range [Book1]Sheet1!$A$1:$B$5>
+		>>> sht[0, 1]
+		<Range [Book1]Sheet1!$B$1>
+		>>> sht[:10, :10]
+		<Range [Book1]Sheet1!$A$1:$J$10>
+
+	4.6 对象层次结构
+	>>> rng = xw.apps[0].books[0].sheets[0].range('A1')
+	>>> rng.sheet.book.app
+		<Excel App 1644>
+
+
+5. 不同数据结构的处理
+
+	5.1 Single Cells
+		一个cell，默认可以返回的数据可以为float, unicode, None or datetime 对象，
+		这取决这个cell包含什么数据
+		>>> import datetime as dt
+		>>> sht = xw.Book().sheets[0]
+		>>> sht.range('A1').value = 1
+		>>> sht.range('A1').value
+		1.0
+		>>> sht.range('A2').value = 'Hello'
+		>>> sht.range('A2').value
+		'Hello'
+		>>> sht.range('A3').value is None
+		True
+		>>> sht.range('A4').value = dt.datetime(2000, 1, 1)
+		>>> sht.range('A4').value
+		datetime.datetime(2000, 1, 1, 0, 0)
+
+
+	5.2 List
+
+		5.2.1 一维列表(1d List)
+		对于Range对象，其返回的多行或者多列数据，都会表现为一个列表，失去了是行还是列
+		的形状信息
+		>>> sht = xw.Book().sheets[0]
+
+		# Column orientation (nested list)
+		# 注意，如果需要将一个列表赋值到一列数据上，方法之一需要采用nested list
+		>>> sht.range('A1').value = [[1],[2],[3],[4],[5]]  # 在列方向上的一个列表（采用嵌套链表的方式来表达列方向）
+		>>> sht.range('A1:A5').value
+			[1.0, 2.0, 3.0, 4.0, 5.0]
+
+		>>> sht.range('A1').value = [1, 2, 3, 4, 5] # 行方向上的一个列表
+		>>> sht.range('A1:E1').value
+			[1.0, 2.0, 3.0, 4.0, 5.0]
+
+		如果需要强制单个单元格的数据以列表的形式返回，采用如下的方式：
+		>>>sht.range("A1").options(ndim=1).value
+			[1.0]
+
+		如果要将一个列表按列方向写入到Excel中，使用transpose选项：
+		<<<sht.range("A1").options(transpose=True).value = [1,2,3,4]
+
+		5.2.2 二维列表(2d List)
+		如果想保持行或列 列表的形状，设置ndim选项，这样会返回三个nested lists(2d list)
+		>>> sht.range('A1:A5').options(ndim=2).value
+			[[1.0], [2.0], [3.0], [4.0], [5.0]]
+		>>> sht.range('A1:E1').options(ndim=2).value
+			[[1.0, 2.0, 3.0, 4.0, 5.0]]
+
+		对于二维的Range，会自动以nested list 回返。如果需要将一个二维列表赋值给Excel中，只给
+		出目标地址左上角的cell地址就可以。同时可以采用index索引的方式将数据读回python。
+		>>> sht.range('A10').value = [['Foo 1', 'Foo 2', 'Foo 3'], [10, 20, 30]]
+		>>> sht.range((10,1),(11,3)).value
+			[['Foo 1', 'Foo 2', 'Foo 3'], [10.0, 20.0, 30.0]]
+
+		为了降低与excel交互的次数，采用这种方式
+		sht.range('A1').value = [[1,2],[3,4]] 比
+		sht.range('A1').value = [1, 2] 和
+		 sht.range('A2').value = [3, 4]的方式更有效率 
+
+
+	5.3 Range expanding
+		可以通过方法 expand或者options的选项关键字expand来获取excel中一块区域的维度。
+		这两种方法，有区别，expand方法，返回一个将过扩展的Range对象。expand关键字，只是
+		在获取Range对象的value时，才会生效。
+
+		>>> sht = xw.Book().sheets[0]
+		>>> sht.range('A1').value = [[1,2], [3,4]]
+		>>> rng1 = sht.range('A1').expand('table')  # or just .expand()
+		>>> rng2 = sht.range('A1').options(expand='table')
+		>>> rng1.value
+		[[1.0, 2.0], [3.0, 4.0]]
+		>>> rng2.value
+		[[1.0, 2.0], [3.0, 4.0]]
+		>>> sht.range('A3').value = [5, 6]
+		>>> rng1.value 
+		[[1.0, 2.0], [3.0, 4.0]] # 因为rng1是expand函数返回的经过扩展之后的对象，所以，其值不变
+		>>> rng2.value # rng2会重新根据expand关键字，来计算rng2的区域，所以，其包括新增加的值
+		[[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]
+
+		'table' expand方式，可以换成"down" 和"right"方向。
+
+		结合给定左上角起始cell的Range对象来使用expand()函数，可以给我们提供一种灵活的建立
+		excel的方式，我们可以随便的更改table的大小而不需要更改python 代码
+
+
+	5.4 NumPy Arrays
+		NumPy数组的工作方式类似于嵌套式数组，只不过空cells用nan表示 ，而不是用None.
+		如果想把一个Range保存为数组，可以在options 选项中设置convert=np.array
+
+		>>> import numpy as np
+		>>> sht = xw.Book().sheets[0]
+		>> sht.range('A1').value = np.eye(3)
+		>>> sht.range('A1').options(np.array, expand='table').value
+		array([[ 1.,  0.,  0.],
+	       	   [ 0.,  1.,  0.],
+	           [ 0.,  0.,  1.]])
+
+
+    5.5 Pandas DataFrames
+	    >>> sht = xw.Book().sheets[0]
+		>>> df = pd.DataFrame([[1.1, 2.2], [3.3, None]], columns=['one', 'two'])
+		>>> df
+		   one  two
+		0  1.1  2.2
+		1  3.3  NaN
+		>>> sht.range('A1').value = df
+		>>> sht.range('A1:C3').options(pd.DataFrame).value
+		   one  two
+		0  1.1  2.2
+		1  3.3  NaN
+		# options: work for reading and writing
+		>>> sht.range('A5').options(index=False).value = df
+		>>> sht.range('A9').options(index=False, header=False).value = df
+
+
+	5.6 Pandas Series
+		>>> import pandas as pd
+		>>> import numpy as np
+		>>> sht = xw.Book().sheets[0]
+		>>> s = pd.Series([1.1, 3.3, 5., np.nan, 6., 8.], name='myseries')
+		>>> s
+		0    1.1
+		1    3.3
+		2    5.0
+		3    NaN
+		4    6.0
+		5    8.0
+		Name: myseries, dtype: float64
+		>>> sht.range('A1').value = s
+		>>> sht.range('A1:B7').options(pd.Series).value
+		0    1.1
+		1    3.3
+		2    5.0
+		3    NaN
+		4    6.0
+		5    8.0
+		Name: myseries, dtype: float64
+
+	不论对于NumPy 数组还是Pandas 的DataFrame，只需要指定左上角cell的坐标就可以
+
